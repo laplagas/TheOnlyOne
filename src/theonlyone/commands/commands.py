@@ -1,64 +1,86 @@
 import discord
 from discord.ext import commands
 import asyncio
+from datetime import *
+from theonlyone.utils.logger import logger
 
-class Mods(commands.Cog):
+# Guarda uma data/hora atual para uso em logs de erro.
+data = datetime.now()
+
+# Cog principal que agrupa todos os comandos do bot.
+class CMD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
     @commands.command()
     async def ping(self, ctx):
+        # Envia uma resposta de latência para confirmar que o bot está online.
         await ctx.send(f"Pong🏓 {round(self.bot.latency * 1000)}ms")
-
+        
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(ban_members=True)
     async def ban(self, ctx, membro: discord.Member, *, motivo="Não informado!"):
+        # Bane o membro especificado e registra o evento no log.
         mod = ctx.author
         await membro.ban(reason=motivo)
         await ctx.send(f"Membro {membro.mention} foi banido com sucesso!")
-        print(f"Usuario: {membro.name}\n id: {membro.id}\n Foi banido do servidor: {ctx.guild.name}\n Moderador: {mod}")
-
-    @ban.error
-    async def ban_erro(self, ctx, erro):
-        if isinstance(erro, commands.MissingPermissions):
-            await ctx.send("Você não tem permissão para realizar esta ação!")
-        elif isinstance(erro, commands.BotMissingPermissions):
-            await ctx.send(f"**Eu não tenho permissão para fazer isso!**")
-        else:
-            print(erro)
+        logger.info(f"Usuario: {membro} | ID: {membro.id} | Servidor: {ctx.guild.name} | Moderador: {ctx.author}")
+        
+        
 
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(ban_members=True)
     async def unban(self, ctx, *, membro: discord.User):
+        # Remove o banimento de um usuário previamente banido.
         mod = ctx.author
-        try:
-            await ctx.guild.unban(membro)
-            await ctx.send(f"Usuario {membro} foi desbanido com sucesso!")
-            print(f"Usuario: {membro.name} foi desbanido do servidor {ctx.guild.name}")
-        except discord.NotFound:
-            await ctx.send(f"{membro} não foi banido do servidor!")
-            print(f"Moderador {mod} tentou desbanir um usuario não banido.")
-        except Exception as e:
-            await ctx.send(f"Ocorreu um erro: {e}")
-            print(f"Ocorreu um erro: {e}")
-
+        await ctx.guild.unban(membro)
+        await ctx.send(f"Usuario {membro} foi desbanido com sucesso!")
+        logger.info(f"Usuario: {membro.name} foi desbanido do servidor | {ctx.guild.name}")
     @commands.command()
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_messages=True)
     async def clear(self, ctx, msg: int):
+        # Apaga a quantidade de mensagens solicitada no canal atual.
         mod = ctx.author
         await ctx.channel.purge(limit=msg + 1)
         await asyncio.sleep(2)
         await ctx.send(f'{msg} mensagens apagadas, do canal {ctx.channel}!', delete_after=5)
-        print(f"{mod} apagou {msg} mensagens no canal {ctx.channel}!")
+        logger.info(f"Moderador: {mod} | Canal: {ctx.channel} | Qtd. de msgs: {msg}")
+        
 
-    @clear.error
-    async def clear_error(self, ctx, error):
+    @commands.command()
+    @commands.has_permissions(moderate_members=True)
+    
+    async def timeout(self,ctx,membro: discord.Member,tempo: int, tipotempo,*, motivo = "Não informado!"):
+        # Aplica um timeout em um membro com base em duração e tipo de tempo.
+        mod = ctx.author 
+        tipotempo = tipotempo.lower()
+        tempo_valido = {
+            'd' : 'days',
+            'h' : 'hours',
+            'm' : 'minutes',
+            's' : 'seconds'
+        }
+        if tempo <= 0:
+            await ctx.send(f"**Tempo '{tempo}' invalido**")
+        if tipotempo not in tempo_valido:
+            ctx.send(f"Durações disponiveis: 's/m/h/d'!")
+        deltatime = {tempo_valido[tipotempo]: tempo}
+        duracao = discord.utils.utcnow() + datetime.timedelta(**deltatime)
+        await membro.timeout(duracao, reason=motivo)
+        await ctx.send(f"Membro: {membro} | Duração: {tempo} | Motivo: {motivo} | Responsavel: {mod}")
+
+    @commands.Cog.listener()
+    async def on_command_error(self,ctx,error):
+        # Trata erros comuns de permissão e usuário não encontrado.
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("**Você não tem permissão para realizar esta operação!❌**")
+            await ctx.send("Você não tem permisão pra realizar está ação.")
         elif isinstance(error, commands.BotMissingPermissions):
-            await ctx.send(f"**Eu não tenho permissão para realizar esta ação!❌**")
+           await ctx.send("Não tenho permisão pra realizar está ação.")
+        elif isinstance(error, commands.MemberNotFound):
+            await ctx.send("Membro não encontrado!")
         else:
-            print(error)
+            await ctx.send(f"Ocorreu um erro | {error}")
+            logger.info(f"Ocorreu um erro em: {ctx.guild.name} | {data} | Erro: {error}")
 
+# Registra o cog junto ao bot quando a extensão for carregada.
 async def setup(bot):
-    await bot.add_cog(Mods(bot))
+    await bot.add_cog(CMD(bot))
