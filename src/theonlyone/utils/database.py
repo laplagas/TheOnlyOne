@@ -1,100 +1,120 @@
-import sqlite3
+import mysql.connector
+from mysql.connector import Error
 import os
 from datetime import datetime
 from theonlyone.utils.logger import logger
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class Database:
-    def __init__(self, db_path="data/bot.db"):
-        self.db_path = db_path
-        self._ensure_directory()
+    def __init__(self, host=None, user=None, password=None, database=None):
+        self.host = host or os.getenv("DB_HOST", "localhost")
+        self.user = user or os.getenv("DB_USER", "root")
+        self.password = password or os.getenv("DB_PASSWORD", "")
+        self.database = database or os.getenv("DB_NAME", "theonlyone_db")
         self.conn = None
         self.init_db()
 
-    def _ensure_directory(self):
-        """Cria o diretório data/ se não existir"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-
     def get_connection(self):
-        """Obtém ou cria conexão com o banco"""
-        if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path)
-            self.conn.row_factory = sqlite3.Row
-        return self.conn
+        """Obtém ou cria conexão com MySQL"""
+        try:
+            if self.conn is None or not self.conn.is_connected():
+                self.conn = mysql.connector.connect(
+                    host=self.host,
+                    user=self.user,
+                    password=self.password,
+                    database=self.database
+                )
+            return self.conn
+        except Error as e:
+            logger.error(f"Erro ao conectar ao MySQL: {e}")
+            return None
 
     def init_db(self):
         """Inicializa as tabelas do banco de dados"""
         conn = self.get_connection()
+        if conn is None:
+            logger.error("Nao foi possivel conectar ao banco")
+            return
+        
         cursor = conn.cursor()
 
         # Tabela de avisos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS warns (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                moderator_id INTEGER NOT NULL,
-                reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                moderator_id BIGINT NOT NULL,
+                reason VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_guild_user (guild_id, user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
         # Tabela de configurações do servidor
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS guild_config (
-                guild_id INTEGER PRIMARY KEY,
-                log_channel_id INTEGER,
-                welcome_channel_id INTEGER,
+                guild_id BIGINT PRIMARY KEY,
+                log_channel_id BIGINT,
+                welcome_channel_id BIGINT,
                 welcome_message TEXT,
-                prefix TEXT DEFAULT '$',
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                prefix VARCHAR(10) DEFAULT '$',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
         # Tabela de reaction roles
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS reaction_roles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER NOT NULL,
-                message_id INTEGER NOT NULL,
-                channel_id INTEGER NOT NULL,
-                emoji TEXT NOT NULL,
-                role_id INTEGER NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                emoji VARCHAR(255) NOT NULL,
+                role_id BIGINT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_guild_msg (guild_id, message_id),
+                UNIQUE KEY unique_reaction (message_id, emoji)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
         # Tabela de tickets
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tickets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER NOT NULL,
-                ticket_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                channel_id INTEGER NOT NULL,
-                status TEXT DEFAULT 'open',
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                ticket_id INT NOT NULL,
+                user_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                status VARCHAR(20) DEFAULT 'open',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                closed_at TIMESTAMP,
-                closed_by INTEGER
-            )
+                closed_at TIMESTAMP NULL,
+                closed_by BIGINT,
+                INDEX idx_guild_user (guild_id, user_id),
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
         # Tabela de usuários (para leveling, etc)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                xp INTEGER DEFAULT 0,
-                level INTEGER DEFAULT 1,
-                message_count INTEGER DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(guild_id, user_id)
-            )
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                xp INT DEFAULT 0,
+                level INT DEFAULT 1,
+                message_count INT DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_guild_user (guild_id, user_id),
+                INDEX idx_leaderboard (guild_id, xp DESC)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
         conn.commit()
-        logger.info("Database initialized successfully")
+        logger.info("Database MySQL initialized successfully")
 
     # ==================== WARNS ====================
     def add_warn(self, guild_id: int, user_id: int, moderator_id: int, reason: str) -> bool:
@@ -105,14 +125,14 @@ class Database:
             cursor.execute(
                 """
                 INSERT INTO warns (guild_id, user_id, moderator_id, reason)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (guild_id, user_id, moderator_id, reason)
             )
             conn.commit()
             logger.info(f"Warn added | Guild: {guild_id} | User: {user_id} | Moderator: {moderator_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error adding warn: {e}")
             return False
 
@@ -124,13 +144,13 @@ class Database:
             cursor.execute(
                 """
                 SELECT * FROM warns
-                WHERE guild_id = ? AND user_id = ?
+                WHERE guild_id = %s AND user_id = %s
                 ORDER BY created_at DESC
                 """,
                 (guild_id, user_id)
             )
             return cursor.fetchall()
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error fetching warns: {e}")
             return []
 
@@ -139,11 +159,11 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM warns WHERE id = ?", (warn_id,))
+            cursor.execute("DELETE FROM warns WHERE id = %s", (warn_id,))
             conn.commit()
             logger.info(f"Warn deleted | ID: {warn_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error deleting warn: {e}")
             return False
 
@@ -153,13 +173,13 @@ class Database:
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM warns WHERE guild_id = ? AND user_id = ?",
+                "DELETE FROM warns WHERE guild_id = %s AND user_id = %s",
                 (guild_id, user_id)
             )
             conn.commit()
             logger.info(f"All warns cleared | Guild: {guild_id} | User: {user_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error clearing warns: {e}")
             return False
 
@@ -171,15 +191,16 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO guild_config (guild_id, log_channel_id)
-                VALUES (?, ?)
+                INSERT INTO guild_config (guild_id, log_channel_id)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE log_channel_id = %s
                 """,
                 (guild_id, channel_id)
             )
             conn.commit()
             logger.info(f"Log channel set | Guild: {guild_id} | Channel: {channel_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error setting log channel: {e}")
             return False
 
@@ -188,10 +209,10 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT log_channel_id FROM guild_config WHERE guild_id = ?", (guild_id,))
+            cursor.execute("SELECT log_channel_id FROM guild_config WHERE guild_id = %s", (guild_id,))
             result = cursor.fetchone()
             return result[0] if result and result[0] else None
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error getting log channel: {e}")
             return None
 
@@ -211,7 +232,7 @@ class Database:
             conn.commit()
             logger.info(f"Reaction role added | Guild: {guild_id} | Emoji: {emoji} | Role: {role_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error adding reaction role: {e}")
             return False
 
@@ -223,12 +244,12 @@ class Database:
             cursor.execute(
                 """
                 SELECT * FROM reaction_roles
-                WHERE guild_id = ? AND message_id = ?
+                WHERE guild_id = %s AND message_id = ?
                 """,
                 (guild_id, message_id)
             )
             return cursor.fetchall()
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error fetching reaction roles: {e}")
             return []
 
@@ -240,13 +261,13 @@ class Database:
             cursor.execute(
                 """
                 SELECT role_id FROM reaction_roles
-                WHERE guild_id = ? AND message_id = ? AND emoji = ?
+                WHERE guild_id = %s AND message_id = ? AND emoji = ?
                 """,
                 (guild_id, message_id, emoji)
             )
             result = cursor.fetchone()
             return result[0] if result else None
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error getting reaction role by emoji: {e}")
             return None
 
@@ -259,14 +280,14 @@ class Database:
             cursor.execute(
                 """
                 INSERT INTO tickets (guild_id, ticket_id, user_id, channel_id)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (guild_id, ticket_id, user_id, channel_id)
             )
             conn.commit()
             logger.info(f"Ticket created | Guild: {guild_id} | Ticket ID: {ticket_id} | User: {user_id}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error creating ticket: {e}")
             return False
 
@@ -279,14 +300,14 @@ class Database:
                 """
                 UPDATE tickets
                 SET status = 'closed', closed_at = CURRENT_TIMESTAMP, closed_by = ?
-                WHERE ticket_id = ?
+                WHERE ticket_id = %s
                 """,
                 (closed_by, ticket_id)
             )
             conn.commit()
             logger.info(f"Ticket closed | Ticket ID: {ticket_id} | Closed by: {closed_by}")
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error closing ticket: {e}")
             return False
 
@@ -295,9 +316,9 @@ class Database:
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM tickets WHERE ticket_id = ?", (ticket_id,))
+            cursor.execute("SELECT * FROM tickets WHERE ticket_id = %s", (ticket_id,))
             return cursor.fetchone()
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error getting ticket: {e}")
             return None
 
@@ -309,13 +330,13 @@ class Database:
             cursor.execute(
                 """
                 SELECT * FROM tickets
-                WHERE guild_id = ? AND user_id = ?
+                WHERE guild_id = %s AND user_id = %s
                 ORDER BY created_at DESC
                 """,
                 (guild_id, user_id)
             )
             return cursor.fetchall()
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error fetching user tickets: {e}")
             return []
 
@@ -329,16 +350,15 @@ class Database:
                 """
                 INSERT INTO users (guild_id, user_id, xp, message_count)
                 VALUES (?, ?, ?, 1)
-                ON CONFLICT(guild_id, user_id) DO UPDATE SET
-                    xp = xp + ?,
-                    message_count = message_count + 1,
-                    updated_at = CURRENT_TIMESTAMP
+                ON DUPLICATE KEY UPDATE
+                    xp = xp + VALUES(xp),
+                    message_count = message_count + 1
                 """,
                 (guild_id, user_id, xp, xp)
             )
             conn.commit()
             return True
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error adding XP: {e}")
             return False
 
@@ -350,7 +370,7 @@ class Database:
             cursor.execute(
                 """
                 SELECT xp, level, message_count FROM users
-                WHERE guild_id = ? AND user_id = ?
+                WHERE guild_id = %s AND user_id = %s
                 """,
                 (guild_id, user_id)
             )
@@ -358,7 +378,7 @@ class Database:
             if result:
                 return {"xp": result[0], "level": result[1], "message_count": result[2]}
             return {"xp": 0, "level": 1, "message_count": 0}
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error getting user stats: {e}")
             return {"xp": 0, "level": 1, "message_count": 0}
 
@@ -370,14 +390,14 @@ class Database:
             cursor.execute(
                 """
                 SELECT user_id, xp, level, message_count FROM users
-                WHERE guild_id = ?
+                WHERE guild_id = %s
                 ORDER BY xp DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (guild_id, limit)
             )
             return cursor.fetchall()
-        except Exception as e:
+        except Error as e:
             logger.error(f"Error getting leaderboard: {e}")
             return []
 
