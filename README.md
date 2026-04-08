@@ -24,13 +24,35 @@ Ideal tanto para aprendizado quanto para uso real em servidores.
 
 ## 🚀 Funcionalidades
 
+### 🛡️ Moderação
+| Comando                | Descrição                       |
+| ---------------------- | ------------------------------- |
+| `ban` / `/ban`         | Bane um membro do servidor      |
+| `unban`                | Remove o banimento de um membro |
+| `kick` / `/kick`       | Expulsa um membro do servidor   |
+| `clear` / `/clear`     | Apaga mensagens de um canal     |
+| `timeout` / `/timeout` | Aplica timeout em um membro     |
+| `warn` / `/warn`       | Dá aviso a um membro            |
+| `warnings` / `/warnings` | Mostra avisos de um membro (com histórico em DB) |
+| `mute` / `/mute`       | Silencia um membro              |
+| `unmute` / `/unmute`   | Dessilencia um membro           |
+
+### 🎭 Sistemas Automáticos
+| Comando                | Descrição                       |
+| ---------------------- | ------------------------------- |
+| `reaction_role_setup` | Cria painel de reaction roles    |
+| `reaction_role_add` | Adiciona emoji e role ao painel |
+| `ticket_panel` | Cria painel para abertura de tickets |
+| `ticket_add` / `ticket_remove` | Gerencia acesso ao ticket |
+| `ticket_close` | Fecha ticket (armazenado em DB) |
+
+### 📊 Utilitários
 | Comando                | Descrição                       |
 | ---------------------- | ------------------------------- |
 | `ping` / `/ping`       | Retorna latência do bot         |
-| `ban` / `/ban`         | Bane um membro do servidor      |
-| `unban`                | Remove o banimento de um membro |
-| `clear`                | Apaga mensagens de um canal     |
-| `timeout` / `/timeout` | Aplica timeout em um membro     |
+| `userinfo` / `/userinfo` | Info de um usuário            |
+| `serverinfo` / `/serverinfo` | Info do servidor             |
+| `help` / `/help`       | Lista de comandos              |
 
 > ⚠️ Comandos de moderação exigem permissões apropriadas.
 
@@ -60,10 +82,16 @@ TheOnlyOne/
 │   └── theonlyone/
 │       ├── app.py
 │       ├── utils/
-│       │   └── logger.py        # Sistema de logging
+│       │   ├── logger.py          # Sistema de logging
+│       │   └── database.py        # BD com prepared statements
 │       └── commands/
-│           ├── cmd.py           # Comandos prefixados
-│           └── slash.py         # Slash commands
+│           ├── commands.py        # Comandos prefixados
+│           ├── slash_commands.py  # Slash commands
+│           ├── reaction_roles.py  # Sistema de reaction roles
+│           └── tickets.py         # Sistema de tickets
+│
+├── data/
+│   └── bot.db                     # Banco de dados SQLite
 │
 ├── requirements.txt
 └── README.md
@@ -131,6 +159,43 @@ Além disso, o projeto conta com:
 * Sistema de logging estruturado
 * Separação entre comandos prefixados e slash commands
 * Tratamento global de erros
+* **Banco de dados SQLite com prepared statements** para persistência segura
+
+---
+
+## 💾 Banco de Dados
+
+O bot utiliza **SQLite** com prepared statements para máxima segurança contra injeção de SQL.
+
+### Tabelas:
+
+- **warns**: Histórico de avisos com razão, moderador e data
+- **guild_config**: Configurações por servidor (canal de logs, prefixo, etc)
+- **reaction_roles**: Mapeamento emoji → role para automação
+- **tickets**: Histórico de tickets criados, fechados e por quem
+- **users**: Estatísticas de usuários (XP, level, mensagens)
+
+### Uso no código:
+
+```python
+from theonlyone.utils.database import db
+
+# Adicionar aviso
+db.add_warn(guild_id=123, user_id=456, moderator_id=789, reason="Spam")
+
+# Obter avisos
+warns = db.get_warns(guild_id=123, user_id=456)
+
+# Adicionar XP
+db.add_xp(guild_id=123, user_id=456, xp=10)
+
+# Obter leaderboard
+leaderboard = db.get_leaderboard(guild_id=123, limit=10)
+```
+
+---
+
+## 🧩 Arquitetura
 
 ---
 
