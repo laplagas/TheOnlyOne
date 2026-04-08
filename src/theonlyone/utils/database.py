@@ -1,24 +1,41 @@
-import mysql.connector
-from mysql.connector import Error
 import os
-from datetime import datetime
 from theonlyone.utils.logger import logger
 from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    import mysql.connector
+    from mysql.connector import Error
+except ImportError:
+    mysql = None
+    Error = Exception
+    logger.warning("mysql-connector-python não encontrado; banco de dados desabilitado.")
+
 
 class Database:
     def __init__(self, host=None, user=None, password=None, database=None):
+        self.enabled = True
+        if mysql is None:
+            self.enabled = False
+
         self.host = host or os.getenv("DB_HOST", "localhost")
         self.user = user or os.getenv("DB_USER", "root")
         self.password = password or os.getenv("DB_PASSWORD", "")
         self.database = database or os.getenv("DB_NAME", "theonlyone_db")
         self.conn = None
-        self.init_db()
+
+        if self.enabled:
+            self.init_db()
+        else:
+            logger.warning("Database está desabilitado; operações persistentes serão ignoradas.")
 
     def get_connection(self):
         """Obtém ou cria conexão com MySQL"""
+        if not self.enabled:
+            logger.warning("Banco de dados está desabilitado; get_connection retornando None.")
+            return None
+
         try:
             if self.conn is None or not self.conn.is_connected():
                 self.conn = mysql.connector.connect(
@@ -30,7 +47,12 @@ class Database:
             return self.conn
         except Error as e:
             logger.error(f"Erro ao conectar ao MySQL: {e}")
+            self.enabled = False
             return None
+
+    def _disabled(self, default=None):
+        logger.warning("Banco de dados desabilitado; operação ignorada.")
+        return default
 
     def init_db(self):
         """Inicializa as tabelas do banco de dados"""
@@ -119,8 +141,14 @@ class Database:
     # ==================== WARNS ====================
     def add_warn(self, guild_id: int, user_id: int, moderator_id: int, reason: str) -> bool:
         """Adiciona um aviso a um usuário"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -138,8 +166,14 @@ class Database:
 
     def get_warns(self, guild_id: int, user_id: int) -> list:
         """Obtém todos os avisos de um usuário"""
+        if not self.enabled:
+            return self._disabled([])
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled([])
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -156,8 +190,14 @@ class Database:
 
     def delete_warn(self, warn_id: int) -> bool:
         """Remove um aviso específico"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute("DELETE FROM warns WHERE id = %s", (warn_id,))
             conn.commit()
@@ -169,8 +209,14 @@ class Database:
 
     def clear_warns(self, guild_id: int, user_id: int) -> bool:
         """Remove todos os avisos de um usuário"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM warns WHERE guild_id = %s AND user_id = %s",
@@ -186,8 +232,14 @@ class Database:
     # ==================== GUILD CONFIG ====================
     def set_log_channel(self, guild_id: int, channel_id: int) -> bool:
         """Define o canal de logs do servidor"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -206,8 +258,14 @@ class Database:
 
     def get_log_channel(self, guild_id: int) -> int:
         """Obtém o canal de logs do servidor"""
+        if not self.enabled:
+            return self._disabled(None)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(None)
+
             cursor = conn.cursor()
             cursor.execute("SELECT log_channel_id FROM guild_config WHERE guild_id = %s", (guild_id,))
             result = cursor.fetchone()
@@ -219,8 +277,14 @@ class Database:
     # ==================== REACTION ROLES ====================
     def add_reaction_role(self, guild_id: int, message_id: int, channel_id: int, emoji: str, role_id: int) -> bool:
         """Adiciona uma reação e role associada"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -238,8 +302,14 @@ class Database:
 
     def get_reaction_roles(self, guild_id: int, message_id: int) -> list:
         """Obtém todas as reaction roles de uma mensagem"""
+        if not self.enabled:
+            return self._disabled([])
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled([])
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -255,8 +325,14 @@ class Database:
 
     def get_reaction_role_by_emoji(self, guild_id: int, message_id: int, emoji: str) -> int:
         """Obtém o role_id para um emoji específico"""
+        if not self.enabled:
+            return self._disabled(None)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(None)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -274,8 +350,14 @@ class Database:
     # ==================== TICKETS ====================
     def create_ticket(self, guild_id: int, ticket_id: int, user_id: int, channel_id: int) -> bool:
         """Cria um ticket"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -293,13 +375,19 @@ class Database:
 
     def close_ticket(self, ticket_id: int, closed_by: int) -> bool:
         """Fecha um ticket"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
                 UPDATE tickets
-                SET status = 'closed', closed_at = CURRENT_TIMESTAMP, closed_by = ?
+                SET status = 'closed', closed_at = CURRENT_TIMESTAMP, closed_by = %s
                 WHERE ticket_id = %s
                 """,
                 (closed_by, ticket_id)
@@ -313,8 +401,14 @@ class Database:
 
     def get_ticket(self, ticket_id: int) -> dict:
         """Obtém informações de um ticket"""
+        if not self.enabled:
+            return self._disabled(None)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(None)
+
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM tickets WHERE ticket_id = %s", (ticket_id,))
             return cursor.fetchone()
@@ -324,8 +418,14 @@ class Database:
 
     def get_user_tickets(self, guild_id: int, user_id: int) -> list:
         """Obtém todos os tickets de um usuário"""
+        if not self.enabled:
+            return self._disabled([])
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled([])
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -343,18 +443,24 @@ class Database:
     # ==================== USERS ====================
     def add_xp(self, guild_id: int, user_id: int, xp: int) -> bool:
         """Adiciona XP a um usuário"""
+        if not self.enabled:
+            return self._disabled(False)
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled(False)
+
             cursor = conn.cursor()
             cursor.execute(
                 """
                 INSERT INTO users (guild_id, user_id, xp, message_count)
-                VALUES (?, ?, ?, 1)
+                VALUES (%s, %s, %s, 1)
                 ON DUPLICATE KEY UPDATE
                     xp = xp + VALUES(xp),
                     message_count = message_count + 1
                 """,
-                (guild_id, user_id, xp, xp)
+                (guild_id, user_id, xp)
             )
             conn.commit()
             return True
@@ -364,8 +470,14 @@ class Database:
 
     def get_user_stats(self, guild_id: int, user_id: int) -> dict:
         """Obtém estatísticas de um usuário"""
+        if not self.enabled:
+            return self._disabled({"xp": 0, "level": 1, "message_count": 0})
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled({"xp": 0, "level": 1, "message_count": 0})
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -384,8 +496,14 @@ class Database:
 
     def get_leaderboard(self, guild_id: int, limit: int = 10) -> list:
         """Obtém o ranking de usuários"""
+        if not self.enabled:
+            return self._disabled([])
+
         try:
             conn = self.get_connection()
+            if conn is None:
+                return self._disabled([])
+
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -403,6 +521,8 @@ class Database:
 
     def close(self):
         """Fecha a conexão com o banco de dados"""
+        if not self.enabled:
+            return
         if self.conn:
             self.conn.close()
 
