@@ -58,6 +58,18 @@ Ideal tanto para aprendizado quanto para uso real em servidores.
 | `/selectticket` | Select Menu  | Categorizar ticket (bug, sugestão, etc)        |
 | `/banreview`  | Buttons        | Confirmar/cancelar ban com interface visual    |
 
+### 🎨 Embeds e Eventos
+
+| Comando       | Descrição                                      |
+| ------------- | ---------------------------------------------- |
+| `/embed`      | Criar embed customizado com modal              |
+| `/embed_templates` | Ver templates pré-definidos de embeds   |
+| `/embed_list` | Listar embeds salvos do servidor               |
+| `/reminder`   | Criar um lembrete com modal                    |
+| `/reminders`  | Ver todos seus lembretes                       |
+| `/event`      | Criar evento para o servidor                   |
+| `/events`     | Ver eventos agendados do servidor              |
+
 ### 📊 Utilitários
 
 | Comando                      | Descrição               |
@@ -113,7 +125,8 @@ TheOnlyOne/
 │           ├── commands.py        # Comandos com prefixo ($)
 │           ├── moderation.py      # Slash commands de moderação (/)
 │           ├── info.py            # Slash commands de informação (/)
-│           ├── interactions.py    # Modals, buttons, select menus
+│           ├── interactions.py    # Modals, buttons, select menus           
+│           ├── utilities.py       # Lembretes, eventos, embeds customizados        
 │           ├── reaction_roles.py  # Sistema de reaction roles
 │           └── tickets.py         # Sistema de tickets
 │
@@ -253,6 +266,10 @@ db.close_ticket(ticket_id=1, closed_by=456)
 * [x] Integração completa com banco
 * [x] Componentes interativos (modals, buttons, select menus)
 * [x] Reorganização e consolidação de comandos
+* [x] Embeds customizáveis com templates
+* [x] Sistema de lembretes e eventos
+* [ ] Persistência de lembretes em banco
+* [ ] Notificações automáticas de eventos
 * [ ] Sistema de permissões customizado
 * [ ] Histórico avançado de punições
 * [ ] Sistema de auto-moderação (detecção de spam/palavras proibidas)
